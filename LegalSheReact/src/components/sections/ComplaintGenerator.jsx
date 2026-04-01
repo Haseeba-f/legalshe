@@ -1,8 +1,9 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { callClaudeAPI } from '../../utils/ai';
+import { useClaudeAPI } from '../../hooks/useClaudeAPI';
+import { COMPLAINT_SYSTEM_PROMPT } from '../../utils/systemPrompts';
 import { useSafeMode } from '../../context/SafeModeContext';
-import { generateComplaintPDF } from '../../utils/pdf';
+import jsPDF from 'jspdf';
 
 const HARASSMENT_TYPES = [
   { value: '', label: 'Select type of incident...', icon: '' },
@@ -60,7 +61,6 @@ export const ComplaintGenerator = () => {
     incidentLocation: '',
     description: '',
   });
-  const [isGenerating, setIsGenerating] = useState(false);
   const [draftComplaint, setDraftComplaint] = useState(null);
   const [detectedLaw, setDetectedLaw] = useState('');
   const [step, setStep] = useState(1);
@@ -70,6 +70,9 @@ export const ComplaintGenerator = () => {
   const [disclaimerAccepted, setDisclaimerAccepted] = useState(false);
   const textareaRef = useRef(null);
   const charCount = formData.description.length;
+
+  // Claude API hook
+  const { callClaude, loading: isGenerating, error } = useClaudeAPI();
 
   useEffect(() => {
     const handleClear = () => {
@@ -98,53 +101,94 @@ export const ComplaintGenerator = () => {
 
   const handleGenerate = async () => {
     if (!formData.description.trim()) return;
-    setIsGenerating(true);
     setLoadingPhrase(0);
-    try {
-      const typeLabel = HARASSMENT_TYPES.find(t => t.value === formData.harassmentType)?.label || 'Unspecified';
-      const prompt = `I need help drafting a formal police complaint letter. Here are the details:
 
-Type of Incident: ${typeLabel}
-Date of Incident: ${formData.incidentDate || 'Not specified'}
+    const typeLabel = HARASSMENT_TYPES.find(t => t.value === formData.harassmentType)?.label || 'Unspecified';
+    const userPrompt = `Generate complaint letter for:
+Name: [YOUR NAME]
+Date: ${formData.incidentDate || 'Not specified'}
+Type of Harassment: ${typeLabel}
 Location: ${formData.incidentLocation || 'Not specified'}
-Description: "${formData.description}"
+Organization/Person Involved: [To be filled]
+Description: ${formData.description}
+Witnesses: None`;
 
-Please:
-1. Identify the exact applicable BNS 2023 / IT Act sections for this incident
-2. Draft a formal, professional complaint letter addressed to the Station House Officer
-3. Include all relevant legal sections
-4. Keep the tone formal and factual
-5. Do NOT include any actual abusive content, only reference it professionally
-6. Format the complaint as a proper letter with subject, body, and request for FIR
-7. Include placeholders like [YOUR NAME], [YOUR ADDRESS], [YOUR CONTACT] for personal info
+    try {
+      const response = await callClaude(
+        [{ role: 'user', content: userPrompt }],
+        COMPLAINT_SYSTEM_PROMPT,
+        1024
+      );
 
-Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start with the identified law sections on the first line in format: "APPLICABLE LAWS: [sections]" then a blank line, then the letter.`;
-
-      const response = await callClaudeAPI(prompt);
-      const lawMatch = response.match(/APPLICABLE LAWS?:\s*(.+)/i);
-      const lawSection = lawMatch ? lawMatch[1].trim() : 'BNS 2023 / IT Act';
+      // Extract any detected law sections from response
+      const lawMatch = response.match(/APPLICABLE LEGAL PROVISIONS.*?\n([\s\S]+?)(?=\n\nWITNESSES|\n\nPRAYER)/i);
+      const lawSection = lawMatch ? lawMatch[1].trim() : 'BNS 2023';
       setDetectedLaw(lawSection);
-      const cleanDraft = response.replace(/APPLICABLE LAWS?:\s*.+\n*/i, '').trim();
-      setDraftComplaint(cleanDraft);
+      setDraftComplaint(response);
       setStep(2);
     } catch (err) {
-      alert('Failed to generate complaint: ' + err.message);
+      // error already set by hook
     }
-    setIsGenerating(false);
   };
 
+  // jsPDF-based download
   const handleDownloadPDF = () => {
-    generateComplaintPDF({
-      incidentDescription: draftComplaint,
-      lawSection: detectedLaw,
-      date: formData.incidentDate || new Date().toLocaleDateString(),
+    if (!draftComplaint) return;
+
+    const doc = new jsPDF({
+      orientation: 'portrait',
+      unit: 'mm',
+      format: 'a4',
     });
+
+    const margin = 15;
+    const pageWidth = doc.internal.pageSize.getWidth();
+    const contentWidth = pageWidth - margin * 2;
+    const lineHeight = 7;
+    let yPosition = margin;
+
+    // Header
+    doc.setFontSize(14);
+    doc.setFont('helvetica', 'bold');
+    doc.text('FORMAL COMPLAINT LETTER', pageWidth / 2, yPosition, { align: 'center' });
+    yPosition += lineHeight * 2;
+
+    // Body text — auto-wrap and paginate
+    doc.setFontSize(11);
+    doc.setFont('helvetica', 'normal');
+
+    const lines = doc.splitTextToSize(draftComplaint, contentWidth);
+
+    lines.forEach((line) => {
+      if (yPosition > doc.internal.pageSize.getHeight() - margin) {
+        doc.addPage();
+        yPosition = margin;
+      }
+      doc.text(line, margin, yPosition);
+      yPosition += lineHeight;
+    });
+
+    // Footer with disclaimer
+    const footerY = doc.internal.pageSize.getHeight() - 10;
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'italic');
+    doc.text(
+      'Generated by LegalShe. Verify with a qualified lawyer before filing. False complaints are an offence under BNS Section 182.',
+      pageWidth / 2,
+      footerY,
+      { align: 'center', maxWidth: contentWidth }
+    );
+
+    // Filename: complaint_<date>.pdf
+    const safeDate = (formData.incidentDate || new Date().toLocaleDateString()).replace(/\//g, '-');
+    doc.save(`complaint_${safeDate}.pdf`);
   };
 
   const handleCopy = () => {
-    navigator.clipboard.writeText(draftComplaint);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
+    navigator.clipboard.writeText(draftComplaint).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
   };
 
   const handleReset = () => {
@@ -456,6 +500,22 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                     </span>
                   </label>
 
+                  {/* Error state */}
+                  <AnimatePresence>
+                    {error && (
+                      <motion.div
+                        className="flex items-center gap-3 rounded-[14px] px-5 py-3"
+                        style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}
+                        initial={{ opacity: 0, y: 10 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: -10 }}
+                      >
+                        <span className="material-icons-round text-red-400 text-sm">error_outline</span>
+                        <p className="text-red-400 text-sm">{error}</p>
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+
                   {/* Generate Button */}
                   <motion.button
                     onClick={handleGenerate}
@@ -470,7 +530,7 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                         ? 'bg-white/5'
                         : 'bg-gradient-to-r from-legal-purple via-[#9333EA] to-legal-gold'
                     }`} />
-                    
+
                     {/* Shine sweep animation */}
                     {isFormReady && !isGenerating && (
                       <div
@@ -559,7 +619,7 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                   transition={{ delay: 0.35 }}
                 >
                   <span className="material-icons-round text-legal-gold text-lg">policy</span>
-                  <span className="text-[0.8rem] font-semibold text-legal-gold">Detected Laws:</span>
+                  <span className="text-[0.8rem] font-semibold text-legal-gold">Applicable Laws:</span>
                   <motion.span
                     className="text-[0.8rem] text-legal-purpleLight px-4 py-1.5 rounded-btn border font-medium"
                     style={{
@@ -568,7 +628,7 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                     }}
                     whileHover={{ scale: 1.03, borderColor: 'rgba(124,58,237,0.4)' }}
                   >
-                    {detectedLaw}
+                    BNS 2023
                   </motion.span>
                 </motion.div>
               )}
@@ -606,12 +666,12 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                   </div>
                   {/* Letter content */}
                   <div className="px-8 py-6 max-h-[450px] overflow-y-auto" style={{ scrollbarWidth: 'thin', scrollbarColor: 'rgba(124,58,237,0.3) transparent' }}>
-                    <div
+                    <pre
                       className="text-[0.9rem] text-[#CBD5E1] leading-[1.85] whitespace-pre-wrap font-body"
-                      style={{ fontVariantLigatures: 'common-ligatures' }}
+                      style={{ fontFamily: 'inherit', fontVariantLigatures: 'common-ligatures' }}
                     >
                       {draftComplaint}
-                    </div>
+                    </pre>
                   </div>
                   {/* Card footer meta */}
                   <div className="flex items-center gap-4 px-8 py-3 border-t border-white/[0.04] bg-white/[0.015]">
@@ -636,7 +696,8 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                 {/* Download PDF */}
                 <motion.button
                   onClick={handleDownloadPDF}
-                  className="relative flex-1 overflow-hidden rounded-[50px] cursor-pointer"
+                  disabled={!draftComplaint}
+                  className="relative flex-1 overflow-hidden rounded-[50px] cursor-pointer disabled:opacity-40"
                   whileHover={{ scale: 1.02, y: -1 }}
                   whileTap={{ scale: 0.98 }}
                 >
@@ -658,7 +719,8 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                 {/* Copy to clipboard */}
                 <motion.button
                   onClick={handleCopy}
-                  className="relative flex-1 overflow-hidden rounded-[50px] cursor-pointer group"
+                  disabled={!draftComplaint}
+                  className="relative flex-1 overflow-hidden rounded-[50px] cursor-pointer group disabled:opacity-40"
                   whileHover={{ scale: 1.02, y: -1 }}
                   whileTap={{ scale: 0.98 }}
                   style={{
@@ -720,7 +782,7 @@ Return ONLY the drafted complaint letter text, ready to be put into a PDF. Start
                 <div className="flex items-start gap-3">
                   <span className="material-icons-round text-legal-gold/70 text-lg mt-0.5">info</span>
                   <p className="text-[0.75rem] text-legal-gold/50 leading-relaxed">
-                    <strong className="text-legal-gold/70">Important:</strong> This is an AI-generated draft for reference only. Have it reviewed by a legal professional before filing. LegalShe does not provide official legal counsel.
+                    <strong className="text-legal-gold/70">Important:</strong> This is an AI-generated draft for reference only. Have it reviewed by a legal professional before filing. Filing false complaints is illegal (BNS 2023 Section 182). LegalShe does not provide official legal counsel.
                   </p>
                 </div>
               </motion.div>

@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { callClaudeAPI } from '../../utils/ai';
+import { useClaudeAPI } from '../../hooks/useClaudeAPI';
+import { ANALYZER_SYSTEM_PROMPT } from '../../utils/systemPrompts';
 import { useSafeMode } from '../../context/SafeModeContext';
 
 const LANGUAGES = [
@@ -15,13 +16,17 @@ export const Analyzer = () => {
   const [transcript, setTranscript] = useState('');
   const [isRecording, setIsRecording] = useState(false);
   const [aiResponse, setAiResponse] = useState(null);
-  const [isAnalyzing, setIsAnalyzing] = useState(false);
   const [recognition, setRecognition] = useState(null);
+  const [parsedResult, setParsedResult] = useState(null);
+
+  // Claude API hook
+  const { callClaude, loading: isAnalyzing, error } = useClaudeAPI();
 
   useEffect(() => {
     const handleClear = () => {
       setTranscript('');
       setAiResponse(null);
+      setParsedResult(null);
     };
     window.addEventListener('clear-legal-forms', handleClear);
 
@@ -38,13 +43,24 @@ export const Analyzer = () => {
         setTranscript(finalTranscript);
       };
       rec.onend = () => setIsRecording(false);
+      rec.onerror = (event) => {
+        setIsRecording(false);
+        if (event.error === 'not-allowed') {
+          alert('Microphone permission denied. Please enable it in your browser settings.');
+        } else {
+          alert(`Voice input error: ${event.error}`);
+        }
+      };
       setRecognition(rec);
     }
     return () => window.removeEventListener('clear-legal-forms', handleClear);
   }, []);
 
   const toggleRecording = () => {
-    if (!recognition) return alert('Speech recognition is not supported in this browser. Please use Chrome or Safari.');
+    if (!recognition) {
+      alert('Voice input is not supported in this browser. Please use Chrome or Edge.');
+      return;
+    }
     if (!isRecording) {
       recognition.lang = activeLang;
       recognition.start();
@@ -55,17 +71,37 @@ export const Analyzer = () => {
     }
   };
 
+  // Parse Claude's structured text response into an object
+  const parseAnalyzerResponse = (text) => {
+    const severityMatch = text.match(/Severity:\s*(\d+)\/10/i);
+    const confidenceMatch = text.match(/Confidence:\s*(\d+)%/i);
+    const categoryMatch = text.match(/Category:\s*(.+)/i);
+    const bnsMatch = text.match(/BNS Sections?:\s*(.+)/i);
+
+    return {
+      raw: text,
+      severity: severityMatch ? parseInt(severityMatch[1]) : null,
+      confidence: confidenceMatch ? parseInt(confidenceMatch[1]) : null,
+      category: categoryMatch ? categoryMatch[1].trim() : null,
+      bnsSections: bnsMatch ? bnsMatch[1].trim() : null,
+    };
+  };
+
   const handleAnalyze = async () => {
     if (!transcript.trim()) return;
-    setIsAnalyzing(true);
     setAiResponse(null);
+    setParsedResult(null);
     try {
-      const res = await callClaudeAPI(transcript);
-      setAiResponse(res);
+      const response = await callClaude(
+        [{ role: 'user', content: `Analyze this harassment scenario: ${transcript}` }],
+        ANALYZER_SYSTEM_PROMPT,
+        1024
+      );
+      setAiResponse(response);
+      setParsedResult(parseAnalyzerResponse(response));
     } catch (err) {
-      alert("Error: " + err.message);
+      // error state is already set by useClaudeAPI
     }
-    setIsAnalyzing(false);
   };
 
   const formatResponse = (text) => {
@@ -89,6 +125,56 @@ export const Analyzer = () => {
           <h3 className="font-display font-bold text-xl text-legal-gold">Analysis Complete</h3>
         </div>
 
+        {/* Parsed metrics row */}
+        {parsedResult && (parsedResult.severity || parsedResult.confidence || parsedResult.category) && (
+          <div className="flex flex-wrap gap-3 mb-4">
+            {parsedResult.category && (
+              <span className="text-[0.78rem] font-semibold px-4 py-1.5 rounded-btn" style={{
+                background: 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(124,58,237,0.05))',
+                border: '1px solid rgba(124,58,237,0.2)',
+                color: '#D2BBFF',
+              }}>
+                {parsedResult.category}
+              </span>
+            )}
+            {parsedResult.severity && (
+              <span className="text-[0.78rem] font-semibold px-4 py-1.5 rounded-btn" style={{
+                background: `linear-gradient(135deg, rgba(${parsedResult.severity > 6 ? '239,68,68' : '245,158,11'},0.1), rgba(${parsedResult.severity > 6 ? '239,68,68' : '245,158,11'},0.05))`,
+                border: `1px solid rgba(${parsedResult.severity > 6 ? '239,68,68' : '245,158,11'},0.2)`,
+                color: parsedResult.severity > 6 ? '#EF4444' : '#F59E0B',
+              }}>
+                Severity: {parsedResult.severity}/10
+              </span>
+            )}
+            {parsedResult.confidence && (
+              <span className="text-[0.78rem] font-semibold px-4 py-1.5 rounded-btn" style={{
+                background: 'linear-gradient(135deg, rgba(16,185,129,0.1), rgba(16,185,129,0.05))',
+                border: '1px solid rgba(16,185,129,0.2)',
+                color: '#10B981',
+              }}>
+                Confidence: {parsedResult.confidence}%
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Severity progress bar */}
+        {parsedResult && parsedResult.severity && (
+          <div className="w-full h-2 bg-white/[0.06] rounded-full overflow-hidden">
+            <motion.div
+              className="h-full rounded-full"
+              style={{
+                background: parsedResult.severity > 6
+                  ? 'linear-gradient(90deg, #F59E0B, #EF4444)'
+                  : 'linear-gradient(90deg, #10B981, #F59E0B)',
+              }}
+              initial={{ width: '0%' }}
+              animate={{ width: `${parsedResult.severity * 10}%` }}
+              transition={{ duration: 1, ease: [0.22, 1, 0.36, 1] }}
+            />
+          </div>
+        )}
+
         <div className="relative rounded-[20px] p-[1px]">
           <div className="absolute inset-0 rounded-[20px] opacity-25" style={{
             background: 'linear-gradient(135deg, rgba(245,158,11,0.3), rgba(124,58,237,0.2))'
@@ -100,7 +186,7 @@ export const Analyzer = () => {
 
         <div className="flex gap-4 mt-6">
           <motion.button
-            onClick={() => { setTranscript(''); setAiResponse(null); }}
+            onClick={() => { setTranscript(''); setAiResponse(null); setParsedResult(null); }}
             className="px-6 py-2.5 rounded-btn text-white text-sm font-semibold transition-all cursor-pointer"
             style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)' }}
             whileHover={{ scale: 1.03, backgroundColor: 'rgba(255,255,255,0.08)' }}
@@ -289,6 +375,25 @@ export const Analyzer = () => {
             </div>
           </div>
         </motion.div>
+
+        {/* Error state */}
+        <AnimatePresence>
+          {error && (
+            <motion.div
+              className="flex items-center gap-3 mb-6 px-5 py-3 rounded-[14px]"
+              style={{
+                background: 'rgba(239,68,68,0.06)',
+                border: '1px solid rgba(239,68,68,0.15)',
+              }}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+            >
+              <span className="material-icons-round text-red-400">error_outline</span>
+              <p className="text-red-400 text-sm">{error}</p>
+            </motion.div>
+          )}
+        </AnimatePresence>
 
         {/* Loading state */}
         <AnimatePresence>

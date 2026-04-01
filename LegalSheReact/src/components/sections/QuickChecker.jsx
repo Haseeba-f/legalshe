@@ -1,42 +1,53 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { callClaudeAPI } from '../../utils/ai';
+import { useClaudeAPI } from '../../hooks/useClaudeAPI';
+import { QUICK_CHECK_SYSTEM_PROMPT } from '../../utils/systemPrompts';
 import { useSafeMode } from '../../context/SafeModeContext';
 
 export const QuickChecker = () => {
   const { safeBlurClass } = useSafeMode();
   const [query, setQuery] = useState('');
-  const [isChecking, setIsChecking] = useState(false);
   const [result, setResult] = useState(null);
+
+  // Claude API hook — 300 token limit for quick answers
+  const { callClaude, loading: isChecking, error } = useClaudeAPI();
+
+  const parseQuickCheckResponse = (text) => {
+    const verdictMatch = text.match(/Verdict:\s*(YES|NO|DEPENDS)/i);
+    const reasonMatch = text.match(/Reason:\s*(.+?)(?=BNS Reference:|$)/is);
+    const bnsMatch = text.match(/BNS Reference:\s*(.+)/i);
+
+    return {
+      verdict: verdictMatch ? verdictMatch[1].toUpperCase() : 'DEPENDS',
+      reason: reasonMatch ? reasonMatch[1].trim() : text,
+      bnsReference: bnsMatch ? bnsMatch[1].trim() : 'N/A',
+    };
+  };
 
   const handleCheck = async () => {
     if (!query.trim()) return;
-    setIsChecking(true);
     setResult(null);
-
-    const aggressivePrompt = `IGNORE PREVIOUS FORMAT RULES. 
-    Analyze this situation under Indian Law (BNS 2023 / IT Act).
-    Respond ONLY with one of these Exact phrases followed by a single short sentence explaining why:
-    "✅ Legal - [reason]"
-    "⚠️ Gray Area - [reason]"
-    "❌ Violation - [reason, name the BNS section]"
-    
-    Situation: ${query}`;
-
     try {
-      const response = await callClaudeAPI(aggressivePrompt, null);
-      setResult(response.trim());
-    } catch (error) {
-      setResult("⚠️ Error checking law status. Please try Analyzer.");
+      const response = await callClaude(
+        [{ role: 'user', content: `Is this legal in India? ${query}` }],
+        QUICK_CHECK_SYSTEM_PROMPT,
+        300
+      );
+      setResult(parseQuickCheckResponse(response));
+    } catch (err) {
+      // error already set by useClaudeAPI hook
     }
-    setIsChecking(false);
   };
 
-  const getResultStyle = () => {
-    if (!result) return {};
-    if (result.includes('❌')) return { color: '#EF4444', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.15)', icon: 'dangerous' };
-    if (result.includes('✅')) return { color: '#10B981', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.15)', icon: 'check_circle' };
-    return { color: '#F59E0B', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.15)', icon: 'warning' };
+  const getVerdictStyle = (verdict) => {
+    switch (verdict) {
+      case 'YES':
+        return { color: '#10B981', bg: 'rgba(16,185,129,0.06)', border: 'rgba(16,185,129,0.15)', icon: 'check_circle', emoji: '✅' };
+      case 'NO':
+        return { color: '#EF4444', bg: 'rgba(239,68,68,0.06)', border: 'rgba(239,68,68,0.15)', icon: 'dangerous', emoji: '❌' };
+      default:
+        return { color: '#F59E0B', bg: 'rgba(245,158,11,0.06)', border: 'rgba(245,158,11,0.15)', icon: 'warning', emoji: '⚠️' };
+    }
   };
 
   return (
@@ -102,10 +113,10 @@ export const QuickChecker = () => {
               />
               <motion.button
                 onClick={handleCheck}
-                disabled={isChecking || !query}
+                disabled={isChecking || !query.trim()}
                 className="relative px-7 py-2.5 rounded-[50px] font-display font-bold text-[0.82rem] disabled:opacity-40 cursor-pointer overflow-hidden"
-                whileHover={!isChecking && query ? { scale: 1.04 } : {}}
-                whileTap={!isChecking && query ? { scale: 0.96 } : {}}
+                whileHover={!isChecking && query.trim() ? { scale: 1.04 } : {}}
+                whileTap={!isChecking && query.trim() ? { scale: 0.96 } : {}}
               >
                 <div className="absolute inset-0 bg-gradient-to-r from-legal-purple to-[#5B21B6] rounded-[50px]" />
                 <span className="relative z-10 text-white flex items-center gap-1.5">
@@ -129,34 +140,78 @@ export const QuickChecker = () => {
             </div>
           </div>
 
-          {/* Result */}
+          {/* Error state */}
+          <AnimatePresence>
+            {error && (
+              <motion.div
+                className="mt-4 flex items-center gap-3 px-5 py-3 rounded-[14px] text-left"
+                style={{ background: 'rgba(239,68,68,0.06)', border: '1px solid rgba(239,68,68,0.15)' }}
+                initial={{ opacity: 0, y: 10 }}
+                animate={{ opacity: 1, y: 0 }}
+                exit={{ opacity: 0, y: -10 }}
+              >
+                <span className="material-icons-round text-red-400 text-sm">error_outline</span>
+                <p className="text-red-400 text-sm">{error}</p>
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* Structured Result */}
           <AnimatePresence>
             {result && (
               <motion.div
-                className="mt-6 rounded-[18px] p-5 text-left"
+                className="mt-6 rounded-[18px] p-5 text-left space-y-3"
                 style={{
-                  background: getResultStyle().bg,
-                  border: `1px solid ${getResultStyle().border}`,
+                  background: getVerdictStyle(result.verdict).bg,
+                  border: `1px solid ${getVerdictStyle(result.verdict).border}`,
                 }}
                 initial={{ opacity: 0, y: 15, scale: 0.97 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -10, scale: 0.97 }}
                 transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
               >
-                <div className="flex items-start gap-3">
+                {/* Verdict row */}
+                <div className="flex items-center gap-3">
                   <motion.span
-                    className="material-icons-round text-xl mt-0.5"
-                    style={{ color: getResultStyle().color }}
+                    className="material-icons-round text-xl"
+                    style={{ color: getVerdictStyle(result.verdict).color }}
                     initial={{ scale: 0 }}
                     animate={{ scale: 1 }}
                     transition={{ type: 'spring', stiffness: 400, damping: 15, delay: 0.1 }}
                   >
-                    {getResultStyle().icon}
+                    {getVerdictStyle(result.verdict).icon}
                   </motion.span>
-                  <p className="font-semibold text-[1rem] leading-relaxed" style={{ color: getResultStyle().color }}>
-                    {result}
-                  </p>
+                  <span
+                    className="font-display font-bold text-[1.1rem]"
+                    style={{ color: getVerdictStyle(result.verdict).color }}
+                  >
+                    {getVerdictStyle(result.verdict).emoji} {result.verdict}
+                  </span>
                 </div>
+
+                {/* Reason */}
+                {result.reason && (
+                  <p className="text-[0.9rem] text-[#CBD5E1] leading-relaxed pl-9">
+                    {result.reason}
+                  </p>
+                )}
+
+                {/* BNS Reference */}
+                {result.bnsReference && result.bnsReference !== 'N/A' && (
+                  <div className="pl-9">
+                    <span
+                      className="inline-flex items-center gap-1.5 text-[0.75rem] font-semibold px-3 py-1 rounded-btn"
+                      style={{
+                        background: 'linear-gradient(135deg, rgba(124,58,237,0.1), rgba(124,58,237,0.05))',
+                        border: '1px solid rgba(124,58,237,0.2)',
+                        color: '#D2BBFF',
+                      }}
+                    >
+                      <span className="material-icons-round text-[0.85rem]">policy</span>
+                      {result.bnsReference}
+                    </span>
+                  </div>
+                )}
               </motion.div>
             )}
           </AnimatePresence>
