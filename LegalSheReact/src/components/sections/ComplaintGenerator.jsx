@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClaudeAPI } from '../../hooks/useClaudeAPI';
+import { useGroqAPI } from '../../hooks/useGroqAPI';
 import { COMPLAINT_SYSTEM_PROMPT } from '../../utils/systemPrompts';
 import { useSafeMode } from '../../context/SafeModeContext';
 import jsPDF from 'jspdf';
@@ -72,7 +72,7 @@ export const ComplaintGenerator = () => {
   const charCount = formData.description.length;
 
   // Claude API hook
-  const { callClaude, loading: isGenerating, error } = useClaudeAPI();
+  const { callGroq, loading: isGenerating, error } = useGroqAPI();
 
   useEffect(() => {
     const handleClear = () => {
@@ -114,7 +114,7 @@ Description: ${formData.description}
 Witnesses: None`;
 
     try {
-      const response = await callClaude(
+      const response = await callGroq(
         [{ role: 'user', content: userPrompt }],
         COMPLAINT_SYSTEM_PROMPT,
         1024

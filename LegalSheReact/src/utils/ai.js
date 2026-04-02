@@ -1,11 +1,17 @@
 // src/utils/ai.js
+import Groq from 'groq-sdk';
 
-export const callClaudeAPI = async (prompt, imageBase64 = null) => {
-  const CLAUDE_API_KEY = import.meta.env.VITE_CLAUDE_API_KEY;
+export const callAI = async (prompt, imageBase64 = null) => {
+  const GROQ_API_KEY = import.meta.env.VITE_GROQ_API_KEY;
 
-  if (!CLAUDE_API_KEY || CLAUDE_API_KEY === 'YOUR_CLAUDE_API_KEY_HERE') {
-    throw new Error('Please configure VITE_CLAUDE_API_KEY in your .env file.');
+  if (!GROQ_API_KEY || GROQ_API_KEY === 'YOUR_GROQ_API_KEY_HERE') {
+    throw new Error('Please configure VITE_GROQ_API_KEY in your .env file.');
   }
+
+  const client = new Groq({
+    apiKey: GROQ_API_KEY,
+    dangerouslyAllowBrowser: true
+  });
 
   const systemPrompt = `You are LegalShe — a warm, compassionate AI legal companion for women in India. 
 
@@ -28,44 +34,24 @@ STRICT RULES:
    Threats = BNS 351(3)
    Online abuse = IT Act 67 / BNS 79`;
 
-  const messages = (imageBase64 && imageBase64.length > 0) ? [
-    {
-      role: 'user',
-      content: [
-        { type: 'image', source: { type: 'base64', media_type: 'image/jpeg', data: imageBase64 } },
-        { type: 'text', text: prompt || 'Analyze this screenshot for harassment, abuse, threats or violations. Identify exact BNS 2023 law sections violated. Follow the LegalShe response format.' }
-      ]
-    }
-  ] : [
-    { role: 'user', content: prompt }
-  ];
-
   try {
-    const response = await fetch('https://api.anthropic.com/v1/messages', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'x-api-key': CLAUDE_API_KEY,
-        'anthropic-version': '2023-06-01',
-        'anthropic-dangerously-allow-browser': 'true' // Since this is client-side zero-data architecture
-      },
-      body: JSON.stringify({
-        model: 'claude-3-5-sonnet-20241022',
-        max_tokens: 1024,
-        system: systemPrompt,
-        messages
-      })
+    // Note: We ignore the imageBase64 parameter and use the text-only Llama 3.1 8b instant model.
+    // This works perfectly because Shield.jsx uses Tesseract.js (OCR) to extract the text from the image for us
+    // and correctly injects it into the prompt string natively anyway!
+    
+    const response = await client.chat.completions.create({
+      model: 'llama-3.1-8b-instant',
+      max_tokens: 1024,
+      temperature: 0.3,
+      messages: [
+        { role: 'system', content: systemPrompt },
+        { role: 'user', content: prompt }
+      ]
     });
 
-    if (!response.ok) {
-      const errorData = await response.json();
-      throw new Error(errorData.error?.message || 'Failed to reach Claude API');
-    }
-
-    const data = await response.json();
-    return data.content[0].text;
+    return response.choices[0].message.content;
   } catch (error) {
     console.error('API Call Error:', error);
-    throw error;
+    throw new Error(error.message || 'Failed to reach Groq API');
   }
 };

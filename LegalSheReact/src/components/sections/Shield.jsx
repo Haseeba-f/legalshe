@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import Tesseract from 'tesseract.js';
-import { callClaudeAPI } from '../../utils/ai';
+import { callAI } from '../../utils/ai';
 import { useSafeMode } from '../../context/SafeModeContext';
 import { generateComplaintPDF } from '../../utils/pdf';
 
@@ -69,7 +69,7 @@ export const Shield = () => {
       const prompt = `I am submitting a screenshot of online harassment. 
       Extracted Text from OCR: "${extractedText}". 
       Analyze this text/image. Identify strict BNS 2023 law sections violated. Format as LegalShe STRICT RULES. DO NOT output the abusive text.`;
-      const aiResponse = await callClaudeAPI(prompt, rawBase64);
+      const aiResponse = await callAI(prompt, rawBase64);
       setReport(aiResponse);
       setBase64Image(rawBase64);
     } catch (err) {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClaudeAPI } from '../../hooks/useClaudeAPI';
+import { useGroqAPI } from '../../hooks/useGroqAPI';
 import { QUICK_CHECK_SYSTEM_PROMPT } from '../../utils/systemPrompts';
 import { useSafeMode } from '../../context/SafeModeContext';
 
@@ -10,7 +10,7 @@ export const QuickChecker = () => {
   const [result, setResult] = useState(null);
 
   // Claude API hook — 300 token limit for quick answers
-  const { callClaude, loading: isChecking, error } = useClaudeAPI();
+  const { callGroq, loading: isChecking, error } = useGroqAPI();
 
   const parseQuickCheckResponse = (text) => {
     const verdictMatch = text.match(/Verdict:\s*(YES|NO|DEPENDS)/i);
@@ -28,14 +28,14 @@ export const QuickChecker = () => {
     if (!query.trim()) return;
     setResult(null);
     try {
-      const response = await callClaude(
+      const response = await callGroq(
         [{ role: 'user', content: `Is this legal in India? ${query}` }],
         QUICK_CHECK_SYSTEM_PROMPT,
         300
       );
       setResult(parseQuickCheckResponse(response));
     } catch (err) {
-      // error already set by useClaudeAPI hook
+      // error already set by useGroqAPI hook
     }
   };
 

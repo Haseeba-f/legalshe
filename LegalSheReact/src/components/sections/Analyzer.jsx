@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { useClaudeAPI } from '../../hooks/useClaudeAPI';
+import { useGroqAPI } from '../../hooks/useGroqAPI';
 import { ANALYZER_SYSTEM_PROMPT } from '../../utils/systemPrompts';
 import { useSafeMode } from '../../context/SafeModeContext';
 
@@ -20,7 +20,7 @@ export const Analyzer = () => {
   const [parsedResult, setParsedResult] = useState(null);
 
   // Claude API hook
-  const { callClaude, loading: isAnalyzing, error } = useClaudeAPI();
+  const { callGroq, loading: isAnalyzing, error } = useGroqAPI();
 
   useEffect(() => {
     const handleClear = () => {
@@ -92,7 +92,7 @@ export const Analyzer = () => {
     setAiResponse(null);
     setParsedResult(null);
     try {
-      const response = await callClaude(
+      const response = await callGroq(
         [{ role: 'user', content: `Analyze this harassment scenario: ${transcript}` }],
         ANALYZER_SYSTEM_PROMPT,
         1024
@@ -100,7 +100,7 @@ export const Analyzer = () => {
       setAiResponse(response);
       setParsedResult(parseAnalyzerResponse(response));
     } catch (err) {
-      // error state is already set by useClaudeAPI
+      // error state is already set by useGroqAPI
     }
   };
 
