@@ -141,9 +141,55 @@ LegalSheReact/
 
 ---
 
+## 🚀 Future Implementation Roadmap
+
+### V2 — Stability & Accuracy (Next 3 Months)
+- **BNS 2023 Verified Database** — Cross-reference every AI output against a
+  manually verified BNS section database before displaying. Flag unverified
+  sections with a warning instead of showing them confidently.
+- **Node.js Backend Proxy** — Move API calls server-side so the Groq key is
+  never exposed in the browser. Add per-IP rate limiting (20 requests/day per
+  user) to prevent abuse.
+- **Gemini Vision for OCR** — Replace Tesseract.js with Gemini's multimodal
+  vision API for dramatically better screenshot text extraction, especially
+  for blurry or low-resolution images.
+- **PWA Support** — Make LegalShe installable on any phone like a native app,
+  with offline access to cached legal information and helplines.
+
+### V3 — Reach & Accessibility (3–6 Months)
+- **WhatsApp Bot Integration** — A woman in crisis shouldn't have to open a
+  browser. She should be able to WhatsApp a number and get legal guidance
+  instantly in her language.
+- **Simple Mode** — Larger text, icon-based navigation, fully voice-driven
+  flow for users with low digital literacy. Designed for rural and older users,
+  not just tech-savvy students.
+- **Lawyer Directory** — Integrated directory of pro-bono and low-cost women's
+  rights advocates in Hyderabad and Telangana, with one-tap call or chat.
+- **Expanded Language Support** — Tamil, Kannada, and Marathi to reach women
+  across South India beyond Telugu and Hindi.
+
+### V4 — Trust & Scale (6–12 Months)
+- **Anonymous Case Outcome Tracker** — Anonymized data showing "X women filed
+  complaints like yours — Y% got justice." Converts fear into hope with real
+  numbers.
+- **NGO & Government Partnerships** — White-label deployment for Telangana
+  State Women's Commission, iCall, and corporate POSH compliance portals.
+- **Advocate Review Integration** — One-click "Get this letter reviewed" that
+  connects generated complaint letters to pro-bono legal clinics for free
+  signing and verification before filing.
+- **Automated Helpline Verification** — Monthly automated testing of every
+  helpline number to flag disconnected lines before a woman in crisis calls
+  a dead number.
+
+---
+
+> *LegalShe started as a hackathon project born from a real experience.
+> The roadmap above exists because the problem doesn't end at the demo.
+> Every feature above represents a real gap that leaves real women without help.*
+
 ## 🏆 Built For
 
-**DevQueens Hackathon** — *She Builds She Leads*  
+**DevQueens Hackathon** 
 Lords Engineering College, Hyderabad  
 Theme: Women in Technology & Social Impact
 
@@ -151,10 +197,10 @@ Theme: Women in Technology & Social Impact
 
 ## ⚠️ Disclaimer
 
-LegalShe provides **legal information, not legal advice**. All AI-generated content should be verified with a licensed advocate before taking action. Helpline numbers are verified for Hyderabad, Telangana.
+LegalShe provides **legal information/process, not legal advice**. All AI-generated content should be verified with a licensed advocate before taking action. Helpline numbers are verified for Hyderabad, Telangana.
 
 ---
 
 <div align="center">
-Built with 💜 by Haseeba · DevQueens 2025
+Built with 💜 by Haseeba & Hafsa · DevQueens 2026
 </div>
