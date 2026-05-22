@@ -6,7 +6,7 @@
 # ⚖️ LegalShe
 ### *AI-Powered Multilingual Legal Companion for Women in India*
 
-**Built at DevQueens Hackathon · Women-Only · Lords Engineering College, Hyderabad**
+**Built at DevQueens Hackathon · Women-Only**
 
 </div>
 
